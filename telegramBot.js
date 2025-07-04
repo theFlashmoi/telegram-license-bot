@@ -1,35 +1,54 @@
+require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const { decryptData } = require('./encryption');
+const { decryptData } = require('./utils/encryption');
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configura el bot (usa UNA SOLA instancia)
-const token = process.env.TELEGRAM_TOKEN || '7764229533:AAG2nWIHR1qkWJVmkSG7LDptkzaAAQJcDok';
-const bot = new TelegramBot(token, { polling: false }); // Webhook, no polling
+// Validaciones críticas
+if (!process.env.TELEGRAM_TOKEN) {
+  console.error('ERROR: TELEGRAM_TOKEN no configurado en .env');
+  process.exit(1);
+}
 
-// Middleware para procesar JSON
+if (!process.env.RENDER_EXTERNAL_URL) {
+  console.error('ERROR: RENDER_EXTERNAL_URL no configurado en .env');
+  process.exit(1);
+}
+
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: false });
+
+// Middleware
 app.use(express.json());
 
-// Configura el webhook (ejecutar solo una vez)
-bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
+// Configurar webhook
+const setupWebhook = async () => {
+  try {
+    const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
+    await bot.setWebHook(webhookUrl);
+    console.log(`Webhook configurado correctamente en: ${webhookUrl}`);
+  } catch (error) {
+    console.error('Error configurando webhook:', error.message);
+    process.exit(1);
+  }
+};
 
-// Ruta para el webhook
+// Rutas
 app.post('/webhook', (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// Ruta de health check
 app.get('/', (req, res) => res.send('Bot activo ✅'));
 
-// Comando /start
+// Comandos
 bot.onText(/\/start (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const encryptedData = match[1];
 
   try {
     const { userId, userName, licenseCode } = decryptData(encryptedData);
+    
     await bot.sendMessage(
       chatId,
       `🔑 *Código de Licencia* 🔑\n\n` +
@@ -38,18 +57,23 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
-    await bot.sendMessage(chatId, '❌ Error: Datos inválidos.');
+    console.error('Error desencriptando:', error);
+    await bot.sendMessage(chatId, '❌ Error: Datos inválidos o expirados.');
   }
 });
 
-// Comando /help
 bot.onText(/\/help/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    '🤖 Envía /start seguido del código de la app.',
+    '🤖 *Ayuda*\n\n' +
+    '/start [codigo] - Verificar tu licencia\n' +
+    '/help - Mostrar esta ayuda',
     { parse_mode: 'Markdown' }
   );
 });
 
-// Inicia el servidor
-app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+// Iniciar servidor
+app.listen(PORT, async () => {
+  console.log(`Servidor iniciado en puerto ${PORT}`);
+  await setupWebhook();
+});
