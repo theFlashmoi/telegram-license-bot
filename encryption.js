@@ -1,17 +1,17 @@
-const crypto = require('crypto');
+const CryptoJS = require('crypto-js');
 
-const algorithm = 'aes-256-cbc';
+// Configuración de encriptación
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-const IV_LENGTH = 16;
-
 // Función para encriptar
 function encryptData(data) {
   try {
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv(algorithm, Buffer.from(ENCRYPTION_KEY), iv);
-    let encrypted = cipher.update(JSON.stringify(data));
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return iv.toString('hex') + ':' + encrypted.toString('hex');
+    const dataString = JSON.stringify(data);
+    const encrypted = CryptoJS.AES.encrypt(dataString, ENCRYPTION_KEY, {
+      keySize: 256,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    return encrypted.toString();
   } catch (error) {
     console.error('Error en encriptación:', error);
     throw new Error('Encryption failed');
@@ -19,15 +19,18 @@ function encryptData(data) {
 }
 
 // Función para desencriptar
-function decryptData(text) {
+function decryptData(encryptedText) {
   try {
-    const [ivHex, encryptedHex] = text.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const encryptedText = Buffer.from(encryptedHex, 'hex');
-    const decipher = crypto.createDecipheriv(algorithm, Buffer.from(ENCRYPTION_KEY), iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return JSON.parse(decrypted.toString());
+    const decrypted = CryptoJS.AES.decrypt(encryptedText, ENCRYPTION_KEY, {
+      keySize: 256,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    const decryptedString = decrypted.toString(CryptoJS.enc.Utf8);
+    if (!decryptedString) {
+      throw new Error('Invalid decryption key or data');
+    }
+    return JSON.parse(decryptedString);
   } catch (error) {
     console.error('Error en desencriptación:', error);
     throw new Error('Decryption failed');
