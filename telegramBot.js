@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
-const { decryptData } = require('./utils/encryption');
+const { decryptData } = require('../utils/encryption');
 
 const app = express();
 const token = process.env.TELEGRAM_TOKEN;
