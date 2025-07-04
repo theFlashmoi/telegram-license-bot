@@ -1,61 +1,55 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { decryptData } = require('./encryption');
-const bot = new TelegramBot('7764229533:AAG2nWIHR1qkWJVmkSG7LDptkzaAAQJcDok', { polling: true });
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Configura el bot (usa UNA SOLA instancia)
+const token = process.env.TELEGRAM_TOKEN || '7764229533:AAG2nWIHR1qkWJVmkSG7LDptkzaAAQJcDok';
+const bot = new TelegramBot(token, { polling: false }); // Webhook, no polling
+
+// Middleware para procesar JSON
+app.use(express.json());
+
+// Configura el webhook (ejecutar solo una vez)
+bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
+
+// Ruta para el webhook
+app.post('/webhook', (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Ruta de health check
+app.get('/', (req, res) => res.send('Bot activo ✅'));
 
 // Comando /start
 bot.onText(/\/start (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const encryptedData = match[1]; // Datos encriptados desde la app
-
-    const express = require('express');
-    const bot = require('node-telegram-bot-api');
-    const app = express();
-    const PORT = process.env.PORT || 3000;
-
-    // Configura el bot en modo webhook
-    const token = process.env.TELEGRAM_TOKEN;
-    const bot = new bot(token, { polling: false }); // ¡Desactiva polling!
-
-    // Configura el webhook (ejecuta esto solo una vez)
-    bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
-
-    // Middleware para procesar updates
-    app.use(express.json());
-    app.post('/webhook', (req, res) => {
-      bot.processUpdate(req.body);
-      res.sendStatus(200);
-    });
-
-    // Ruta de health check
-    app.get('/', (req, res) => res.send('Bot activo'));
-
-    app.listen(PORT, () => console.log(`Escuchando en puerto ${PORT}`));
+  const encryptedData = match[1];
 
   try {
-    // 1. Desencriptar datos
     const { userId, userName, licenseCode } = decryptData(encryptedData);
-
-    // 2. Responder al usuario con el código
     await bot.sendMessage(
       chatId,
       `🔑 *Código de Licencia* 🔑\n\n` +
       `Hola ${userName || 'usuario'}!\n\n` +
-      `Tu código para activar la licencia es:\n` +
-      `\`\`\`${licenseCode}\`\`\`\n\n` +
-      `Cópialo y pégalo en la aplicación.`,
+      `Tu código es: \`\`\`${licenseCode}\`\`\``,
       { parse_mode: 'Markdown' }
     );
-
   } catch (error) {
-    await bot.sendMessage(chatId, '❌ Error: Datos de licencia inválidos.');
+    await bot.sendMessage(chatId, '❌ Error: Datos inválidos.');
   }
 });
 
-// Opcional: Comando /help
+// Comando /help
 bot.onText(/\/help/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    '🤖 *Bot de Licencias*\n\nEnvía /start seguido del código proporcionado por la app para obtener tu licencia.',
+    '🤖 Envía /start seguido del código de la app.',
     { parse_mode: 'Markdown' }
   );
 });
+
+// Inicia el servidor
+app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
