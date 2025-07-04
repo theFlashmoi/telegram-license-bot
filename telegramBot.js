@@ -1,79 +1,120 @@
-require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const { decryptData } = require('./utils/encryption');
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
+const { databaseOperations } = require('../utils/database');
+const { decryptData } = require('../utils/encryption');
 
-// Validaciones críticas
-if (!process.env.TELEGRAM_TOKEN) {
-  console.error('ERROR: TELEGRAM_TOKEN no configurado en .env');
-  process.exit(1);
-}
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const bot = new TelegramBot(token, { polling: false });
 
-if (!process.env.RENDER_EXTERNAL_URL) {
-  console.error('ERROR: RENDER_EXTERNAL_URL no configurado en .env');
-  process.exit(1);
-}
-
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: false });
-
-// Middleware
-app.use(express.json());
-
-// Configurar webhook
-const setupWebhook = async () => {
-  try {
-    const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
-    await bot.setWebHook(webhookUrl);
-    console.log(`Webhook configurado correctamente en: ${webhookUrl}`);
-  } catch (error) {
-    console.error('Error configurando webhook:', error.message);
-    process.exit(1);
-  }
-};
-
-// Rutas
-app.post('/webhook', (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-
-app.get('/', (req, res) => res.send('Bot activo ✅'));
-
-// Comandos
+// Manejar solicitudes de licencia
 bot.onText(/\/start (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const encryptedData = match[1];
-
+  
   try {
-    const { userId, userName, licenseCode } = decryptData(encryptedData);
+    // Desencriptar datos
+    const decryptedData = decryptData(encryptedData);
+    const { userId, userName, userEmail, licenseCode, expirationDate } = decryptedData;
     
-    await bot.sendMessage(
-      chatId,
-      `🔑 *Código de Licencia* 🔑\n\n` +
-      `Hola ${userName || 'usuario'}!\n\n` +
-      `Tu código es: \`\`\`${licenseCode}\`\`\``,
-      { parse_mode: 'Markdown' }
+    // Registrar en base de datos
+    await databaseOperations.logLicenseAction(
+      userId, 
+      'TELEGRAM_REQUEST', 
+      `Solicitud via Telegram: ${licenseCode}`
     );
+    
+    // Formatear fecha
+    const formattedDate = new Date(expirationDate).toLocaleDateString();
+    
+    // Construir mensaje
+    const message = `🔑 *Nueva solicitud de licencia*:\n
+👤 *Usuario*: ${userName}
+📧 *Email*: ${userEmail}
+🆔 *ID*: ${userId}
+🔢 *Código*: \`${licenseCode}\`
+📅 *Expiración*: ${formattedDate}\n
+_Esta clave ya está registrada en el sistema._`;
+
+    // Enviar mensaje con botones
+    bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { 
+              text: 'Activar Manualmente', 
+              callback_data: `activate_${licenseCode}`
+            },
+            {
+              text: 'Marcar como Usada',
+              callback_data: `mark_used_${licenseCode}`
+            }
+          ]
+        ]
+      }
+    });
+    
   } catch (error) {
-    console.error('Error desencriptando:', error);
-    await bot.sendMessage(chatId, '❌ Error: Datos inválidos o expirados.');
+    console.error('Error procesando solicitud:', error);
+    bot.sendMessage(chatId, '❌ Error: No se pudo procesar la solicitud');
   }
 });
 
-bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    '🤖 *Ayuda*\n\n' +
-    '/start [codigo] - Verificar tu licencia\n' +
-    '/help - Mostrar esta ayuda',
-    { parse_mode: 'Markdown' }
-  );
+// Manejar acciones de botones
+bot.on('callback_query', async (callbackQuery) => {
+  const { data, message } = callbackQuery;
+  const [action, licenseCode] = data.split('_');
+  
+  try {
+    if (action === 'activate') {
+      // Lógica para activación manual
+      await databaseOperations.logLicenseAction(
+        'admin', 
+        'MANUAL_ACTIVATION', 
+        `Activada manualmente: ${licenseCode}`
+      );
+      
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Licencia activada manualmente'
+      });
+      
+      bot.editMessageText(`✅ Licencia ${licenseCode} ACTIVADA`, {
+        chat_id: message.chat.id,
+        message_id: message.message_id
+      });
+      
+    } else if (action === 'mark') {
+      // Marcar como usada
+      await databaseOperations.logLicenseAction(
+        'admin', 
+        'MARKED_USED', 
+        `Marcada como usada: ${licenseCode}`
+      );
+      
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Licencia marcada como usada'
+      });
+      
+      bot.editMessageText(`🏷️ Licencia ${licenseCode} MARCADA COMO USADA`, {
+        chat_id: message.chat.id,
+        message_id: message.message_id
+      });
+    }
+  } catch (error) {
+    console.error('Error procesando callback:', error);
+    bot.answerCallbackQuery(callbackQuery.id, {
+      text: 'Error procesando la solicitud'
+    });
+  }
 });
 
-// Iniciar servidor
-app.listen(PORT, async () => {
-  console.log(`Servidor iniciado en puerto ${PORT}`);
-  await setupWebhook();
-});
+// Configurar webhook
+const setupWebhook = async (webhookUrl) => {
+  try {
+    await bot.setWebHook(`${webhookUrl}/bot${token}`);
+    console.log('✅ Webhook configurado exitosamente');
+  } catch (error) {
+    console.error('❌ Error configurando webhook:', error);
+  }
+};
+
+module.exports = { bot, setupWebhook };
