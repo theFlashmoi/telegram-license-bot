@@ -1,6 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { databaseOperations } = require('../utils/database');
-const { decryptData } = require('../utils/encryption');
+const { databaseOperations } = require('../../utils/database');
+const { decryptData } = require('../../utils/encryption');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: false });
