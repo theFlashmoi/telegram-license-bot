@@ -26,13 +26,18 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "expo": "53.0.12",
+    "expo-background-fetch": "~13.1.6",
     "expo-clipboard": "~7.1.5",
     "expo-document-picker": "~13.1.6",
     "expo-file-system": "~18.1.11",
     "expo-linear-gradient": "~14.1.5",
+    "expo-mail-composer": "~14.1.5",
+    "expo-notifications": "~0.31.3",
     "expo-sharing": "~13.1.5",
     "expo-sqlite": "~15.2.12",
     "expo-status-bar": "~2.2.3",
+    "expo-task-manager": "~13.1.6",
+    "express": "^5.1.0",
     "firebase": "^11.10.0",
     "node-telegram-bot-api": "^0.66.0",
     "react": "19.0.0",
@@ -58,17 +63,10 @@
     "react-native-web": "^0.20.0",
     "uuid": "^11.1.0",
     "victory-native": "^41.17.3",
-    "xlsx": "^0.18.5",
-    "expo-mail-composer": "~14.1.5",
-    "expo-background-fetch": "~13.1.6",
-    "expo-task-manager": "~13.1.6",
-    "expo-notifications": "~0.31.3"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
-  },
-  "engines": {
-    "node": "22.16.0"
   },
   "private": true
 }
