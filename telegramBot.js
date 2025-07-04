@@ -60,7 +60,7 @@ app.post('/webhook', async (req, res) => {
     } catch (decryptError) {
       // Mensaje normal (no encriptado)
       if (message.text.startsWith('/start')) {
-        await bot.sendMessage(chatId, '🤖 *Bot de Licencias*\nEnvía un código encriptado para validar licencias.', {
+        await bot.sendMessage(chatId, '🤖 *Bot de Licencias*\nEnvía un código encriptado para validar licencias Hola.', {
           parse_mode: 'Markdown'
         });
       }
