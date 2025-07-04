@@ -7,20 +7,30 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const encryptedData = match[1]; // Datos encriptados desde la app
 
-  const express = require('express');
-  const app = express();
-  const PORT = process.env.PORT || 3000;
+    const express = require('express');
+    const bot = require('node-telegram-bot-api');
+    const app = express();
+    const PORT = process.env.PORT || 3000;
 
-  // Ruta para health checks (obligatoria en Render)
-  app.get('/', (req, res) => {
-    res.status(200).send('Bot activo');
-  });
+    // Configura el bot en modo webhook
+    const token = process.env.TELEGRAM_TOKEN;
+    const bot = new bot(token, { polling: false }); // ¡Desactiva polling!
 
-  // Inicia el servidor
-  app.listen(PORT, () => {
-    console.log(`Bot escuchando en puerto ${PORT}`);
-  });
-  
+    // Configura el webhook (ejecuta esto solo una vez)
+    bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
+
+    // Middleware para procesar updates
+    app.use(express.json());
+    app.post('/webhook', (req, res) => {
+      bot.processUpdate(req.body);
+      res.sendStatus(200);
+    });
+
+    // Ruta de health check
+    app.get('/', (req, res) => res.send('Bot activo'));
+
+    app.listen(PORT, () => console.log(`Escuchando en puerto ${PORT}`));
+
   try {
     // 1. Desencriptar datos
     const { userId, userName, licenseCode } = decryptData(encryptedData);
