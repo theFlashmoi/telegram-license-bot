@@ -7,6 +7,20 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const encryptedData = match[1]; // Datos encriptados desde la app
 
+  const express = require('express');
+  const app = express();
+  const PORT = process.env.PORT || 3000;
+
+  // Ruta para health checks (obligatoria en Render)
+  app.get('/', (req, res) => {
+    res.status(200).send('Bot activo');
+  });
+
+  // Inicia el servidor
+  app.listen(PORT, () => {
+    console.log(`Bot escuchando en puerto ${PORT}`);
+  });
+  
   try {
     // 1. Desencriptar datos
     const { userId, userName, licenseCode } = decryptData(encryptedData);
