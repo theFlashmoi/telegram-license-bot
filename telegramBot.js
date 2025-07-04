@@ -1,120 +1,99 @@
+require('dotenv').config();
+const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
-const { databaseOperations } = require('../../utils/database');
-const { decryptData } = require('../../utils/encryption');
+const { decryptData } = require('./utils/encryption');
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
+const app = express();
+const token = process.env.TELEGRAM_TOKEN;
 const bot = new TelegramBot(token, { polling: false });
 
-// Manejar solicitudes de licencia
-bot.onText(/\/start (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const encryptedData = match[1];
-  
+// Configuración del Webhook (se ejecuta al iniciar)
+const setupWebhook = async () => {
   try {
-    // Desencriptar datos
-    const decryptedData = decryptData(encryptedData);
-    const { userId, userName, userEmail, licenseCode, expirationDate } = decryptedData;
-    
-    // Registrar en base de datos
-    await databaseOperations.logLicenseAction(
-      userId, 
-      'TELEGRAM_REQUEST', 
-      `Solicitud via Telegram: ${licenseCode}`
-    );
-    
-    // Formatear fecha
-    const formattedDate = new Date(expirationDate).toLocaleDateString();
-    
-    // Construir mensaje
-    const message = `🔑 *Nueva solicitud de licencia*:\n
-👤 *Usuario*: ${userName}
-📧 *Email*: ${userEmail}
-🆔 *ID*: ${userId}
-🔢 *Código*: \`${licenseCode}\`
-📅 *Expiración*: ${formattedDate}\n
-_Esta clave ya está registrada en el sistema._`;
-
-    // Enviar mensaje con botones
-    bot.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { 
-              text: 'Activar Manualmente', 
-              callback_data: `activate_${licenseCode}`
-            },
-            {
-              text: 'Marcar como Usada',
-              callback_data: `mark_used_${licenseCode}`
-            }
-          ]
-        ]
-      }
-    });
-    
+    const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
+    await bot.setWebHook(webhookUrl);
+    console.log(`✅ Webhook configurado en: ${webhookUrl}`);
   } catch (error) {
-    console.error('Error procesando solicitud:', error);
-    bot.sendMessage(chatId, '❌ Error: No se pudo procesar la solicitud');
-  }
-});
-
-// Manejar acciones de botones
-bot.on('callback_query', async (callbackQuery) => {
-  const { data, message } = callbackQuery;
-  const [action, licenseCode] = data.split('_');
-  
-  try {
-    if (action === 'activate') {
-      // Lógica para activación manual
-      await databaseOperations.logLicenseAction(
-        'admin', 
-        'MANUAL_ACTIVATION', 
-        `Activada manualmente: ${licenseCode}`
-      );
-      
-      bot.answerCallbackQuery(callbackQuery.id, {
-        text: 'Licencia activada manualmente'
-      });
-      
-      bot.editMessageText(`✅ Licencia ${licenseCode} ACTIVADA`, {
-        chat_id: message.chat.id,
-        message_id: message.message_id
-      });
-      
-    } else if (action === 'mark') {
-      // Marcar como usada
-      await databaseOperations.logLicenseAction(
-        'admin', 
-        'MARKED_USED', 
-        `Marcada como usada: ${licenseCode}`
-      );
-      
-      bot.answerCallbackQuery(callbackQuery.id, {
-        text: 'Licencia marcada como usada'
-      });
-      
-      bot.editMessageText(`🏷️ Licencia ${licenseCode} MARCADA COMO USADA`, {
-        chat_id: message.chat.id,
-        message_id: message.message_id
-      });
-    }
-  } catch (error) {
-    console.error('Error procesando callback:', error);
-    bot.answerCallbackQuery(callbackQuery.id, {
-      text: 'Error procesando la solicitud'
-    });
-  }
-});
-
-// Configurar webhook
-const setupWebhook = async (webhookUrl) => {
-  try {
-    await bot.setWebHook(`${webhookUrl}/bot${token}`);
-    console.log('✅ Webhook configurado exitosamente');
-  } catch (error) {
-    console.error('❌ Error configurando webhook:', error);
+    console.error('❌ Error al configurar webhook:', error.message);
   }
 };
 
-module.exports = { bot, setupWebhook };
+// Middleware para parsear JSON
+app.use(express.json());
+
+// Ruta del Webhook
+app.post('/webhook', async (req, res) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message || !message.text) {
+      return res.status(200).send();
+    }
+
+    const chatId = message.chat.id;
+    const text = message.text;
+
+    try {
+      // Intentar desencriptar (si es un código de licencia)
+      const decrypted = decryptData(text);
+      
+      const response = [
+        '🔐 *LICENCIA VALIDADA* 🔐',
+        `👤 Usuario: ${decrypted.userId}`,
+        `📧 Email: ${decrypted.userEmail || 'No especificado'}`,
+        `🔑 Código: \`${decrypted.keyCode}\``,
+        `⏳ Expira: ${decrypted.expirationDate}`,
+        '',
+        '_Autenticación segura mediante cifrado AES-256_'
+      ].join('\n');
+
+      await bot.sendMessage(chatId, response, { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✅ Aprobar Licencia', callback_data: `approve_${decrypted.keyCode}` }],
+            [{ text: '❌ Rechazar', callback_data: `reject_${decrypted.keyCode}` }]
+          ]
+        }
+      });
+
+    } catch (decryptError) {
+      // Mensaje normal (no encriptado)
+      if (message.text.startsWith('/start')) {
+        await bot.sendMessage(chatId, '🤖 *Bot de Licencias*\nEnvía un código encriptado para validar licencias.', {
+          parse_mode: 'Markdown'
+        });
+      }
+    }
+
+    res.status(200).end();
+  } catch (error) {
+    console.error('Error en webhook:', error);
+    res.status(500).send('Server Error');
+  }
+});
+
+// Manejo de comandos inline (opcional)
+bot.on('callback_query', async (callbackQuery) => {
+  const { data, message } = callbackQuery;
+  const [action, code] = data.split('_');
+  
+  if (action === 'approve') {
+    await bot.answerCallbackQuery(callbackQuery.id, { text: `Licencia ${code} aprobada` });
+    await bot.sendMessage(message.chat.id, `✅ Licencia *${code}* aprobada correctamente`, {
+      parse_mode: 'Markdown'
+    });
+  }
+});
+
+// Ruta de prueba
+app.get('/', (req, res) => {
+  res.send('🤖 Bot de Licencias Activo');
+});
+
+// Iniciar servidor
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+  await setupWebhook();
+});
