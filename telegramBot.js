@@ -1,31 +1,42 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const CryptoJS = require('crypto-js');
-const express = require('express'); // Nuevo: Para el health check
+const express = require('express');
 
 // Configuración
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET;
-const PORT = process.env.PORT || 10000; // Usa 10000 por defecto
+const PORT = process.env.PORT || 10000;
+const WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL + '/telegram-webhook';
 
-// Inicialización
-const bot = new TelegramBot(TOKEN, { polling: true });
-const app = express(); // Para el health check
+if (!TOKEN || !ENCRYPTION_KEY) {
+  console.error('❌ ERROR: Faltan variables de entorno (TELEGRAM_BOT_TOKEN o ENCRYPTION_SECRET)');
+  process.exit(1);
+}
 
-// Health Check Endpoint (Requerido por Render)
+const app = express();
+app.use(express.json());
+
+// Inicialización del bot con webhook
+const bot = new TelegramBot(TOKEN);
+bot.setWebHook(WEBHOOK_URL);
+
+// Health Check
 app.get('/', (req, res) => {
   res.status(200).send('Bot de Licencias Operativo');
 });
 
-app.listen(PORT, () => {
-  console.log(`🖥️ Servidor escuchando en puerto ${PORT}`);
+// Webhook endpoint
+app.post('/telegram-webhook', (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
 });
 
-// Función de desencriptación (mejorada para resiliencia)
+// Función de desencriptación (igual que antes)
 const decryptData = (encryptedData) => {
   const cleanData = encryptedData
     .replace(/\s/g, '')
-    .replace(/^.*?(U2FsdGVkX1[^\s]+)/i, '$1'); // Extrae solo el payload AES
+    .replace(/^.*?(U2FsdGVkX1[^\s]+)/i, '$1');
 
   try {
     const bytes = CryptoJS.AES.decrypt(cleanData, ENCRYPTION_KEY);
@@ -37,42 +48,35 @@ const decryptData = (encryptedData) => {
   }
 };
 
-// Comandos del Bot
+// Comandos y mensajes (igual que antes)
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    '🔐 *Bot de Gestión de Licencias*\n\n'
-    + 'Envía cualquier mensaje del sistema y extraeré automáticamente:\n'
-    + '• Código de licencia\n• Datos de usuario\n• Fechas de expiración',
+    '🔐 *Bot de Gestión de Licencias*\n\nEnvía cualquier mensaje del sistema y extraeré automáticamente los datos de la licencia.',
     { parse_mode: 'Markdown' }
   );
 });
 
-// Procesamiento de mensajes
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const fullText = msg.text || '';
 
   try {
-    // Detección robusta del payload
     const encryptedMatch = fullText.match(/(U2FsdGVkX1[^\s]+)/i);
     if (!encryptedMatch) {
       return bot.sendMessage(
         chatId,
-        '⚠️ *Formato no reconocido*\n\n'
-        + 'Por favor envía el mensaje *completo* recibido del sistema de licencias.',
+        '⚠️ *Formato no reconocido*\n\nPor favor envía el mensaje completo recibido del sistema de licencias.',
         { parse_mode: 'Markdown' }
       );
     }
 
     const licenseData = decryptData(encryptedMatch[0]);
 
-    // Validación de campos esenciales
     if (!licenseData.keyCode || !licenseData.expirationDate) {
       throw new Error('Estructura de licencia inválida');
     }
 
-    // Formateo profesional de respuesta
     const response = [
       '✅ *LICENCIA VERIFICADA*',
       '',
@@ -93,18 +97,14 @@ bot.on('message', async (msg) => {
     console.error(`Error en chat ${chatId}:`, error);
     bot.sendMessage(
       chatId,
-      '❌ *Error al procesar*\n\n'
-      + `_Detalle: ${error.message}_\n\n`
-      + 'Envía el mensaje original sin modificaciones.',
+      '❌ *Error al procesar*\n\n' + `_Detalle: ${error.message}_`,
       { parse_mode: 'Markdown' }
     );
   }
 });
 
-// Manejo de errores global
-bot.on('polling_error', (error) => {
-  console.error('🔴 Error crítico en polling:', error);
-  process.exit(1); // Reinicia el bot en Render ante fallos graves
+// Iniciar servidor
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
+  console.log(`🌍 Webhook configurado en: ${WEBHOOK_URL}`);
 });
-
-console.log(`🤖 Bot iniciado en puerto ${PORT} | Modo: ${process.env.NODE_ENV || 'development'}`);
