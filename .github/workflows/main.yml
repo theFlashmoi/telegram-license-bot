@@ -1,0 +1,20 @@
+name: Keep Alive Bot
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Ejecuta cada 5 minutos (ajusta si prefieres cada 10: '*/10 * * * *')
+  workflow_dispatch:       # Permite ejecutarlo manualmente
+
+jobs:
+  ping-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hacer ping al bot en Render
+        run: |
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://telegram-license-bot.onrender.com/telegram-webhook)
+          if [ "$RESPONSE" -ne 200 ]; then
+            echo "❌ Error: El bot respondió con código $RESPONSE"
+            exit 1
+          else
+            echo "✅ Bot activo (HTTP $RESPONSE)"
+          fi
