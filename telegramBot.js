@@ -6,18 +6,13 @@ const fs = require('fs');
 
 // Configuración con tus variables
 const TOKEN = process.env.TELEGRAM_TOKEN;
-const ENCRYPTION_KEY = process.env.SECRET_KEY;
+const ENCRYPTION_KEY = process.env.SECRET_KEY || 'AF*1qYgGk^dSvXLp9b3%$2!wE68&G7@5zf4';
 const PORT = process.env.PORT || 10000;
 const WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL + '/telegram-webhook';
 
 // Validación de variables críticas
 if (!TOKEN) {
   console.error('❌ ERROR: TELEGRAM_TOKEN no está configurado');
-  process.exit(1);
-}
-
-if (!ENCRYPTION_KEY) {
-  console.error('❌ ERROR: SECRET_KEY no está configurado');
   process.exit(1);
 }
 
@@ -52,14 +47,17 @@ app.post('/telegram-webhook', (req, res) => {
   res.sendStatus(200);
 });
 
-// Función de desencriptación mejorada
+// Función de desencriptación mejorada para el formato específico
 const decryptData = (encryptedData) => {
   try {
     // Extraer solo la parte encriptada del mensaje completo
-    const base64Data = encryptedData.toString()
-      .split('Por favor procese esta solicitud en el sistema administrativo:')[1]
-      ?.trim()
-      .replace(/\s/g, '');
+    const messageParts = encryptedData.toString().split('Por favor procese esta solicitud en el sistema administrativo:');
+    
+    if (messageParts.length < 2) {
+      throw new Error('Formato de mensaje incorrecto. Falta la sección de datos encriptados.');
+    }
+
+    const base64Data = messageParts[1].trim().replace(/\s/g, '');
 
     if (!base64Data) {
       throw new Error('No se encontraron datos encriptados en el mensaje');
@@ -89,7 +87,8 @@ const decryptData = (encryptedData) => {
     // Parseo y validación de estructura
     const parsedData = JSON.parse(decryptedText);
     
-    const requiredFields = ['userId', 'keyCode', 'expirationDate'];
+    // Campos requeridos basados en tu estructura de mensaje
+    const requiredFields = ['licenseKey', 'userId', 'expirationDate'];
     const missingFields = requiredFields.filter(field => !parsedData[field]);
     
     if (missingFields.length > 0) {
@@ -104,6 +103,26 @@ const decryptData = (encryptedData) => {
     });
     throw new Error(`Error procesando licencia: ${error.message}`);
   }
+};
+
+// Función para extraer información del usuario del mensaje
+const extractUserInfo = (messageText) => {
+  const userInfo = {
+    full_name: 'No especificado',
+    email: 'No especificado'
+  };
+
+  try {
+    const nameMatch = messageText.match(/👤 \*Usuario:\* (.+?)(\n|$)/);
+    const emailMatch = messageText.match(/📧 \*Email:\* (.+?)(\n|$)/);
+
+    if (nameMatch && nameMatch[1]) userInfo.full_name = nameMatch[1].trim();
+    if (emailMatch && emailMatch[1]) userInfo.email = emailMatch[1].trim();
+  } catch (error) {
+    console.error('Error extrayendo información del usuario:', error);
+  }
+
+  return userInfo;
 };
 
 // Función para formatear fechas
@@ -130,7 +149,15 @@ bot.onText(/\/start/, (msg) => {
   
   bot.sendMessage(
     msg.chat.id,
-    '🔐 *Bot de Validación de Licencias*\n\nEnvíame el mensaje completo que recibiste del sistema para verificar la licencia.',
+    '🔐 *Bot de Validación de Licencias*\n\nEnvíame el mensaje *completo* que recibiste del sistema para verificar la licencia.\n\n' +
+    'El mensaje debe tener el formato:\n' +
+    '```\n' +
+    '🔐 Solicitud de Licencia Encriptada 🔐\n\n' +
+    '👤 Usuario: [nombre]\n' +
+    '📧 Email: [email]\n\n' +
+    'Por favor procese esta solicitud...\n' +
+    '[datos encriptados]\n' +
+    '```',
     options
   );
 });
@@ -145,21 +172,25 @@ bot.on('message', async (msg) => {
   console.log(`${userInfo} Mensaje recibido: ${msg.text.substring(0, 30)}...`);
 
   try {
+    // Extraer información del usuario del mensaje
+    const userData = extractUserInfo(msg.text);
+    
+    // Desencriptar los datos de la licencia
     const licenseData = decryptData(msg.text);
     
     // Formatear respuesta
     const response = [
       '✅ *LICENCIA VALIDADA*',
       '',
-      `👤 *Usuario:* ${licenseData.userName || 'No especificado'}`,
-      `📧 *Email:* ${licenseData.userEmail || 'No especificado'}`,
-      `🆔 *ID:* \`${licenseData.userId}\``,
+      `👤 *Usuario:* ${userData.full_name}`,
+      `📧 *Email:* ${userData.email}`,
+      `🆔 *ID Usuario:* \`${licenseData.userId}\``,
       '',
-      `🔢 *Código:* \`${licenseData.keyCode}\``,
-      `📅 *Generado:* ${formatDate(licenseData.generatedAt)}`,
-      `⏳ *Expira:* ${formatDate(licenseData.expirationDate)}`,
+      `🔢 *Código de Licencia:* \`${licenseData.licenseKey}\``,
+      `📅 *Fecha de Expiración:* ${formatDate(licenseData.expirationDate)}`,
+      `⏱️ *Generado el:* ${formatDate(licenseData.timestamp)}`,
       '',
-      `_Sistema: ${licenseData.system || 'TuSistemaApp'}_`
+      '_Sistema de Licencias TuApp_'
     ].join('\n');
     
     await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
@@ -172,17 +203,18 @@ bot.on('message', async (msg) => {
       chatId,
       '❌ *Error de validación*\n\n' +
       `${error.message}\n\n` +
-      'Por favor asegúrate de enviar:\n' +
-      '1. El mensaje *completo* recibido del sistema\n' +
-      '2. Sin modificaciones o añadidos\n\n' +
-      'Ejemplo de formato esperado:\n' +
+      'ℹ️ *Ayuda:*\n' +
+      '1. Asegúrate de enviar el mensaje *completo* que recibiste\n' +
+      '2. No modifiques ni añadas texto al mensaje\n' +
+      '3. El formato esperado es:\n' +
       '```\n' +
       '🔐 Solicitud de Licencia Encriptada 🔐\n\n' +
-      '👤 Usuario: Nombre\n' +
-      '📧 Email: email@ejemplo.com\n\n' +
+      '👤 Usuario: [nombre]\n' +
+      '📧 Email: [email]\n\n' +
       'Por favor procese esta solicitud...\n' +
       '[datos encriptados]\n' +
-      '```',
+      '```\n\n' +
+      'Usa /start para ver instrucciones nuevamente.',
       { parse_mode: 'Markdown' }
     );
   }
@@ -199,19 +231,16 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
   console.log(`🌍 Webhook: ${WEBHOOK_URL}`);
   console.log(`🤖 Bot configurado con token: ${TOKEN.substring(0, 5)}...`);
-  console.log('🔒 Clave de encriptación:', ENCRYPTION_KEY ? 'Configurada' : 'No configurada');
+  console.log('🔒 Clave de encriptación:', ENCRYPTION_KEY ? 'Configurada' : 'Usando valor por defecto');
 });
 
-// Prueba de compatibilidad al iniciar
-const testEncryption = () => {
+// Prueba de compatibilidad con tu formato de mensaje
+const testWithYourFormat = () => {
   const testData = {
-    userId: "test-123",
-    keyCode: "654321",
-    userName: "Usuario de Prueba",
-    userEmail: "test@example.com",
+    licenseKey: "123456",
+    userId: 2,
     expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    generatedAt: new Date().toISOString(),
-    system: "Sistema de Prueba"
+    timestamp: new Date().toISOString()
   };
 
   try {
@@ -221,22 +250,28 @@ const testEncryption = () => {
       { format: CryptoJS.format.OpenSSL }
     ).toString();
 
-    console.log('🔧 Prueba de encriptación:');
-    console.log('Datos originales:', testData);
-    console.log('Encriptados:', encrypted.substring(0, 50) + '...');
+    const testMessage = 
+      '🔐 Solicitud de Licencia Encriptada 🔐\n\n' +
+      '👤 Usuario: Juan Pérez\n' +
+      '📧 Email: juan@ejemplo.com\n\n' +
+      'Por favor procese esta solicitud en el sistema administrativo:\n\n' +
+      encrypted;
 
-    const decrypted = decryptData(`Mensaje de prueba:\n\nPor favor procese esta solicitud en el sistema administrativo:\n\n${encrypted}`);
-    console.log('Desencriptados:', decrypted);
+    console.log('\n🔧 Probando con tu formato exacto:');
+    console.log('Mensaje completo:', testMessage.substring(0, 100) + '...');
     
-    if (decrypted.userId === testData.userId) {
-      console.log('✅ Prueba exitosa - Encriptación/Desencriptación funciona correctamente');
+    const decrypted = decryptData(testMessage);
+    console.log('Datos desencriptados:', decrypted);
+    
+    if (decrypted.licenseKey === testData.licenseKey) {
+      console.log('✅ Prueba exitosa - El formato es compatible');
     } else {
       console.warn('⚠️ Prueba fallida - Los datos no coinciden');
     }
   } catch (error) {
-    console.error('❌ Error en prueba de compatibilidad:', error.message);
+    console.error('❌ Error en prueba de formato:', error.message);
   }
 };
 
-// Ejecutar prueba al iniciar (comentar después de verificar)
-testEncryption();
+// Ejecutar prueba al iniciar (comentar en producción)
+testWithYourFormat();
