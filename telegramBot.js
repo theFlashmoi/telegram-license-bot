@@ -109,15 +109,18 @@ const decryptData = (encryptedData) => {
 const extractUserInfo = (messageText) => {
   const userInfo = {
     full_name: 'No especificado',
-    email: 'No especificado'
+    email: 'No especificado',
+    plan: 'No especificado' // Añadir campo para el plan
   };
 
   try {
     const nameMatch = messageText.match(/👤 \*Usuario:\* (.+?)(\n|$)/);
     const emailMatch = messageText.match(/📧 \*Email:\* (.+?)(\n|$)/);
+    const planMatch = messageText.match(/📜 \*Plan:\* (.+?)(\n|$)/); // Nueva regex para el plan
 
     if (nameMatch && nameMatch[1]) userInfo.full_name = nameMatch[1].trim();
     if (emailMatch && emailMatch[1]) userInfo.email = emailMatch[1].trim();
+    if (planMatch && planMatch[1]) userInfo.plan = planMatch[1].trim(); // Extraer plan
   } catch (error) {
     console.error('Error extrayendo información del usuario:', error);
   }
@@ -180,17 +183,19 @@ bot.on('message', async (msg) => {
     
     // Formatear respuesta
     const response = [
-      '✅ *LICENCIA VALIDADA*',
-      '',
-      `👤 *Usuario:* ${userData.full_name}`,
-      `📧 *Email:* ${userData.email}`,
-      `🆔 *ID Usuario:* \`${licenseData.userId}\``,
-      '',
-      `🔢 *Código de Licencia:* \`${licenseData.licenseKey}\``,
-      `📅 *Fecha de Expiración:* ${formatDate(licenseData.expirationDate)}`,
-      `⏱️ *Generado el:* ${formatDate(licenseData.timestamp)}`,
-      '',
-      '_Sistema de Licencias TuApp_'
+    '✅ *LICENCIA VALIDADA*',
+    '',
+    `👤 *Usuario:* ${userData.full_name}`,
+    `📧 *Email:* ${userData.email}`,
+    `📜 *Plan (mensaje):* ${userData.plan}`,
+    `📜 *Plan (verificado):* ${licenseData.planId || 'No especificado'}`, // Plan desencriptado
+    `🆔 *ID Usuario:* \`${licenseData.userId}\``,
+    '',
+    `🔢 *Código de Licencia:* \`${licenseData.licenseKey}\``,
+    `📅 *Fecha de Expiración:* ${formatDate(licenseData.expirationDate)}`,
+    `⏱️ *Generado el:* ${formatDate(licenseData.timestamp)}`,
+    '',
+    '_Sistema de Licencias TuApp_'
     ].join('\n');
     
     await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
@@ -239,6 +244,7 @@ const testWithYourFormat = () => {
   const testData = {
     licenseKey: "123456",
     userId: 2,
+    planId: "premium", // Añadir plan en prueba
     expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     timestamp: new Date().toISOString()
   };
@@ -275,3 +281,4 @@ const testWithYourFormat = () => {
 
 // Ejecutar prueba al iniciar (comentar en producción)
 testWithYourFormat();
+
